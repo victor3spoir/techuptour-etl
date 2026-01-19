@@ -1,0 +1,71 @@
+services:
+  airflow-db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    networks:
+      airflow-net:
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-db-vol:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 5s
+      retries: 5
+      timeout: 5s
+
+  airflow-migrate-db:
+    image: apache/airflow:custom
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: on-failure
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+    networks:
+      airflow-net:
+    command: db migrate
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
+      AIRFLOW__CORE__LOAD_EXAMPLES: False
+      AIRFLOW_CONN_MINIO_DEFAULT: ${AIRFLOW_CONN_MINIO_DEFAULT}
+      AIRFLOW_CONN_SPARK_DEFAULT: ${AIRFLOW_CONN_SPARK_DEFAULT}
+  airflow-scheduler:
+    extends:
+      service: airflow-migrate-db
+    restart: unless-stopped
+    command: scheduler
+    depends_on:
+      airflow-db:
+        condition: service_started
+      airflow-migrate-db:
+        condition: service_completed_successfully
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./scripts:/opt/airflow/scripts
+      # - ./logs:/opt/airflow/logs
+      # - ./plugins:/opt/airflow/plugins
+
+  airflow-triggerer:
+    extends:
+      service: airflow-scheduler
+    restart: unless-stopped
+    command: triggerer
+
+  airflow-dagprocessor:
+    extends:
+      service: airflow-scheduler
+    restart: unless-stopped
+    command: dag-processor
+
+  airflow-webserver:
+    extends:
+      service: airflow-scheduler
+    restart: unless-stopped
+    command: api-server
+    ports:
+      - "30080:8080"
