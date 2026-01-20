@@ -1,93 +1,153 @@
-from airflow import DAG
-from airflow.operators.python import PythonOperator
-from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
-from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-from datetime import datetime, timedelta
+from __future__ import annotations
 
-# Default DAG arguments
-default_args = {
+import json
+import os
+from datetime import datetime, timedelta
+from airflow.decorators import dag, task
+from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+import zipfile
+import io
+import os
+from pydantic import BaseModel
+from typing import Optional
+
+
+DEFAULT_ARGS = {
     "owner": "airflow",
     "depends_on_past": False,
     "retries": 2,
     "retry_delay": timedelta(minutes=5),
-    "email_on_failure": False,
-    "email_on_retry": False,
 }
 
 
-def extract_from_db(**kwargs):
-    # Placeholder: Extract data from a database
-    # TODO: implement your DB extraction logic here
-    print("Extracting from DB...")
-    return []  # Return empty list or extracted data
+class Book(BaseModel):
+    ISBN: str
+    Book_Title: str
+    Book_Author: str
+    Year_Of_Publication: Optional[int]
+    Publisher: str
+    Image_URL_S: Optional[str]
+    Image_URL_M: Optional[str]
+    Image_URL_L: Optional[str]
 
 
-def extract_from_website(**kwargs):
-    # Placeholder: Scrape website data
-    # TODO: implement your web scraping logic here
-    print("Extracting from website...")
-    return []  # Return empty list or extracted data
-
-
-def extract_from_zip(**kwargs):
-    # Placeholder: Extract files from zip archive
-    # TODO: implement your zip extraction logic here
-    print("Extracting from zip file...")
-    return []  # Return empty list or extracted data
-
-
-def load_to_minio(**kwargs):
-    # Placeholder: Upload results to MinIO (S3-compatible)
-    # TODO: implement your MinIO upload logic here
-    print("Loading data to MinIO...")
-    # Example if you want to use Airflow's S3Hook:
-    # hook = S3Hook(aws_conn_id='minio_default')
-    # hook.load_file(filename='/path/to/file', key='target/key', bucket_name='your-bucket')
-
-
-# DAG definition
-with DAG(
-    "industrial_etl_pipeline",
-    default_args=default_args,
-    description="Industrialized ETL Pipeline integrating extraction, Spark transformation, and MinIO load",
-    schedule_interval="@daily",
+@dag(
+    dag_id="industrial_etl_pipeline_taskflow",
+    description="Extract from multiple sources and upload merged data to MinIO",
+    default_args=DEFAULT_ARGS,
+    schedule="@daily",
     start_date=datetime(2024, 1, 1),
     catchup=False,
-    max_active_runs=1,
-    tags=["etl", "industrial", "spark", "minio"],
-) as dag:
-    extract_db = PythonOperator(
-        task_id="extract_from_db", python_callable=extract_from_db
-    )
+    tags=["etl", "taskflow", "minio"],
+)
+def industrial_etl_pipeline():
+    # -------------------------
+    # Extract tasks
+    # -------------------------
 
-    extract_website = PythonOperator(
-        task_id="extract_from_website", python_callable=extract_from_website
-    )
+    @task
+    def extract_from_db() -> list[dict]:
+        print("Extracting from DB...")
+        return [{"source": "db", "value": 1}]
 
-    extract_zip = PythonOperator(
-        task_id="extract_from_zip", python_callable=extract_from_zip
-    )
+    @task
+    def extract_from_website() -> list[dict]:
+        print("Extracting from website...")
+        return [{"source": "web", "value": 2}]
 
-    # Spark transformation task
-    transform = SparkSubmitOperator(
-        task_id="transform_with_spark",
-        application="/opt/airflow/scripts/transform.py",  # Your Spark script path
-        conn_id="spark_default",
-        application_args=[
-            "--input",
-            "/data/extracted",
-            "--output",
-            "/data/transformed",
-        ],
-        total_executor_cores=4,
-        executor_cores=1,
-        executor_memory="2g",
-        driver_memory="1g",
-        name="spark_etl_transform",
-        verbose=True,
-    )
+    @task.virtualenv(requirements=["httpx", "pydantic"], system_site_packages=False)
+    def extract_from_zip() -> list[dict]:
+        import httpx, zipfile, io, csv
+        from pydantic import ValidationError
+        from typing import List
+        from __main__ import Book
 
-    load = PythonOperator(task_id="load_to_minio", python_callable=load_to_minio)
+        file_id = "1s-x76gQ-eoM5sqT2Hhcfn087Aw5D__hD"
+        url = f"https://drive.google.com/uc?export=download&id={file_id}"
 
-    # Define task dependencies
-    [extract_db, extract_website, extract_zip] >> transform >> load
+        books: List[dict] = []
+
+        # Download ZIP in memory
+        try:
+            with httpx.Client() as client:
+                response = client.get(url)
+                response.raise_for_status()
+        except Exception as e:
+            print(f"Download failed: {e}")
+            raise
+
+        # Extract CSV in memory and parse
+        with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+            for filename in z.namelist():
+                if filename.endswith(".csv"):
+                    with z.open(filename) as csvfile:
+                        reader = csv.DictReader(
+                            io.TextIOWrapper(csvfile, encoding="utf-8")
+                        )
+                        for row in reader:
+                            try:
+                                book = Book(**row)
+                                books.append(book.dict())  # store dicts for XCom
+                            except ValidationError as e:
+                                print(f"Skipping invalid row: {e}")
+
+        print(f"Extracted {len(books)} books from ZIP")
+        return books
+
+    # -------------------------
+    # Merge task
+    # -------------------------
+
+    @task
+    def merge_data(
+        db_data: list[dict],
+        web_data: list[dict],
+        zip_data: list[dict],
+    ) -> str:
+        """
+        Merge all extracted data and write to a local file.
+        Returns the file path (small string → safe for XCom).
+        """
+        merged = db_data + web_data + zip_data
+
+        output_dir = "/opt/airflow/data"
+        os.makedirs(output_dir, exist_ok=True)
+
+        file_path = f"{output_dir}/merged_data_{datetime.utcnow().date()}.json"
+
+        with open(file_path, "w") as f:
+            json.dump(merged, f)
+
+        print(f"Merged {len(merged)} records into {file_path}")
+        return file_path
+
+    # -------------------------
+    # Upload task
+    # -------------------------
+
+    @task
+    def upload_to_minio(file_path: str) -> None:
+        print(f"Uploading {file_path} to MinIO...")
+
+        hook = S3Hook(aws_conn_id="minio_default")
+
+        hook.load_file(
+            filename=file_path,
+            key=f"etl/merged/{os.path.basename(file_path)}",
+            bucket_name="industrial-data",
+            replace=True,
+        )
+
+    # -------------------------
+    # DAG wiring
+    # -------------------------
+
+    db_data = extract_from_db()
+    web_data = extract_from_website()
+    zip_data = extract_from_zip()
+
+    merged_file = merge_data(db_data, web_data, zip_data)
+    upload_to_minio(merged_file)
+
+
+dag = industrial_etl_pipeline()
