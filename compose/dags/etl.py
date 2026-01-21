@@ -45,12 +45,12 @@ def industrial_etl_pipeline():
     # Extract tasks
     # -------------------------
 
-    @task
+    @task()
     def extract_from_db() -> list[dict]:
         print("Extracting from DB...")
         return [{"source": "db", "value": 1}]
 
-    @task
+    @task()
     def extract_from_website() -> list[dict]:
         print("Extracting from website...")
         return [{"source": "web", "value": 2}]
