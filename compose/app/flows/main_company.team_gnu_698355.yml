@@ -1,0 +1,12 @@
+id: gnu_698355
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.scripts.shell.Commands
+    commands: 
+      - set -x
+      - echo $(whoami)
+      - echo $(hostname)
+      - echo $(pwd)
+      - ls -lhR /usr

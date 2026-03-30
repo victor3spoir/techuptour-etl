@@ -2,10 +2,10 @@ services:
   kestra-minio:
     image: quay.io/minio/minio:latest
     restart: unless-stopped
-    entrypoint: ''
-    command:
+    entrypoint:
       - sh
       - -c
+    command:
       - mkdir -p /data/kestra && minio server /data --address ":9000"
     networks:
       - etl-net
@@ -53,6 +53,7 @@ services:
     image: kestra/kestra:latest-lts
     restart: unless-stopped
     command: server standalone --config /etc/kestra/config.yaml
+    user: root
     deploy:
       replicas: 1
       resources:
@@ -70,6 +71,8 @@ services:
         target: /etc/kestra/config.yaml
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./app/flows:/usr/app/local_flows:rw
+      - ./app/scripts:/usr/app/scripts:rw
 
 
 
@@ -87,6 +90,8 @@ configs:
 
 
       kestra:
+        tutorialFlows:
+          enabled: false
         jdbc:
           queues:
           messageProtection:
@@ -95,17 +100,11 @@ configs:
         encryption:
           secret-key: 50ee98d2e259b314151c51663580aa62cebb8590ba98db336e9ccdb4c972502a
 
-        security:
-            super-admin:
-              username: admin
-              password: admin_password
-              # tenant-admin-access:
-              #   - <optional>
-        # server:
-        #   basicAuth:
-        #     enabled: true
-        #     username: admin@local.host
-        #     password: kestra_password
+        server:
+          basicAuth:
+            enabled: true
+            username: admin@local.host
+            password: Password123!
         url: http://localhost:8080
         repository:
           type: postgres
@@ -123,6 +122,17 @@ configs:
         tasks:
           tmpDir:
             path: "/tmp/kestra-wd/tmp"
+        plugins:
+          configurations:
+            - type: io.kestra.plugin.scripts.runner.docker.Docker
+              values:
+                volume-enabled: true
+      micronaut:
+        io:
+          watch:
+            enabled: true
+            paths:
+              - /usr/app/local_flows
 
 
 volumes:

@@ -1,0 +1,7 @@
+id: new_demo
+namespace: dev
+tasks:
+  - id: first_task
+    type: io.kestra.plugin.scripts.shell.Commands
+    commands:
+      - ls -lhR /usr/app
