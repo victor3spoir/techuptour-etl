@@ -2,16 +2,14 @@ name: tectup-tour
 
 include:
   - ./compose/spark.compose.yml
-  - ./compose/airflow.compose.yml
+  - ./compose/kestra.compose.yml
   - ./compose/minio.compose.yml
 
 volumes:
   minio-vol:
     name: minio-vol
     driver: local
-  airflow-db-vol:
-    name: airflow-db-vol
-    driver: local
+
 
 networks:
-  airflow-net:
+  etl-net:

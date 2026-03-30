@@ -7,7 +7,7 @@ services:
       /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
       --host spark --port 7077 --webui-port 8080
     networks:
-      airflow-net:
+      etl-net:
     ports:
       - "30081:8080" 
 
@@ -17,7 +17,7 @@ services:
     depends_on:
       - spark
     networks:
-      airflow-net:
+      etl-net:
     command: >
       /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker
       spark://spark:7077
@@ -28,7 +28,7 @@ services:
     depends_on:
       - spark
     networks:
-      airflow-net:
+      etl-net:
     command: >
       /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker
       spark://spark:7077
