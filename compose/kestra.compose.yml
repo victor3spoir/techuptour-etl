@@ -19,6 +19,7 @@ services:
       MINIO_ROOT_PASSWORD: minio_password
     volumes:
       - kestra-minio-vol:/data:rw
+      # - ./app/scripts:/data/kestra/namespaces/demo/_files:rw
 
   kestra-db:
     image: postgres:18-alpine
@@ -90,7 +91,9 @@ configs:
 
 
       kestra:
-        tutorialFlows:
+        tutorial-flows:
+          enabled: false
+        blueprints:
           enabled: false
         jdbc:
           queues:

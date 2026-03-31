@@ -1,5 +1,5 @@
-id: hi-guys
-namespace: dv
+id: hi
+namespace: dev
 labels:
   name: Hello World
 
