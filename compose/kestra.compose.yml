@@ -51,10 +51,11 @@ services:
         condition: service_started
       kestra-minio:
         condition: service_started
+
     image: kestra/kestra:latest-lts
     restart: unless-stopped
     command: server standalone --config /etc/kestra/config.yaml
-    user: root
+    user: "root"
     deploy:
       replicas: 1
       resources:
@@ -63,6 +64,8 @@ services:
           cpus: 0.6
     environment:
       KESTRA_URL: http://localhost:8080/
+      DOCKER_HOST: tcp://docker-proxy:2375
+      KESTRA_PLUGINS_CONFIGURATIONS_0_VALUES_HOST: tcp://docker-proxy:2375
     networks:
       - etl-net
     ports:
@@ -91,6 +94,7 @@ configs:
 
 
       kestra:
+
         tutorial-flows:
           enabled: false
         blueprints:
@@ -129,6 +133,7 @@ configs:
           configurations:
             - type: io.kestra.plugin.scripts.runner.docker.Docker
               values:
+                network: etl-net
                 volume-enabled: true
       micronaut:
         io:

@@ -1,0 +1,58 @@
+id: demo_tasks
+namespace: demo
+
+tasks:
+  - id: process_api_data_with_spark
+    type: io.kestra.plugin.spark.PythonSubmit
+    master: spark://spark:7077
+    deployMode: "CLIENT"
+    mainScript: spark_script.py
+    inputFiles:
+      spark_script.py: |
+        from pyspark.sql import SparkSession
+        from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType
+        
+        spark = SparkSession.builder.appName("ProcessUserData").getOrCreate()
+        
+        # Dummy user data: name, email, age, height
+        data = [
+            ("Alice Johnson", "alice@example.com", 28, 5.7),
+            ("Bob Smith", "bob@example.com", 35, 5.9),
+            ("Carol Davis", "carol@example.com", 22, 5.5),
+            ("David Brown", "david@example.com", 45, 6.0),
+            ("Eva Wilson", "eva@example.com", 31, 5.6),
+            ("Frank Miller", "frank@example.com", 26, 5.8),
+            ("Grace Lee", "grace@example.com", 29, 5.4),
+            ("Henry White", "henry@example.com", 38, 6.1),
+        ]
+        
+        # Define schema
+        schema = StructType([
+            StructField("name", StringType(), True),
+            StructField("email", StringType(), True),
+            StructField("age", IntegerType(), True),
+            StructField("height", DoubleType(), True),
+        ])
+        
+        # Create DataFrame
+        df = spark.createDataFrame(data, schema=schema)
+        
+        # Order by age (ascending)
+        df_sorted = df.orderBy("age")
+        
+        # Show results
+        print("\n=== Users Ordered by Age ===")
+        df_sorted.show(truncate=False)
+        
+        # Save to JSON
+        df_sorted.coalesce(1).write.mode("overwrite").json("/tmp/users_by_age.json")
+        print("\nData saved to /tmp/users_by_age.json")
+        
+        spark.stop()
+    taskRunner: 
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      image: "apache/spark:3.5.1-java17-r"
+      user: root
+      networkMode: "host"
+      volumes:
+        - "/usr/app:/usr/app:rw"
