@@ -164,7 +164,7 @@ def main() -> None:
     output = [p.model_dump() for p in projects]
 
     with open("projects.json", "w") as f:
-        json.dump(output_data, f)
+        json.dump(output, f)
 
     print(f"\nFetched {len(output)} projects from github.com/explore", flush=True)
     for p in projects:

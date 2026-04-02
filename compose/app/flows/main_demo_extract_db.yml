@@ -1,0 +1,24 @@
+id: extract_db
+namespace: demo
+
+tasks:
+  - id: download_extract_db
+    type: io.kestra.plugin.fs.local.Download
+    from: "/usr/app/scripts/extract_db.py"
+  - id: extract_from_db
+    type: io.kestra.plugin.scripts.python.Commands
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      networkMode: etl-net
+    dependencies:
+      - pandas
+      - sqlalchemy
+      - psycopg2-binary
+      - fsspec
+    inputFiles:
+      main.py: "{{outputs.download_extract_db.uri}}"
+
+    commands:
+      - python main.py
+    outputFiles:
+      - consumption.json

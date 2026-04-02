@@ -15,30 +15,14 @@ inputs:
     defaults: Rick Astley
 
 tasks:
-  - id: first_task
-    type: io.kestra.plugin.core.output.OutputValues
-    description: Return a value used later in the logged greeting.
-    values:
-      message: "thrilled"
-
-  - id: second_task
+  - id: download
+    type: io.kestra.plugin.fs.local.Download
+    from: "/usr/app/scripts/main.py"
+  - id: show_content
     type: io.kestra.plugin.scripts.shell.Commands
-    description: Run quick shell commands and expose a value as output.
-    commands:
-      - sleep 0.42
-      - echo '::{"outputs":{"returned_data":"mydata"}}::'
+    inputFiles: 
+      download_main.py: "{{outputs.download.uri}}"
+    commands: 
+      - cat download_main.py
 
-  - id: hello_world
-    type: io.kestra.plugin.core.log.Log
-    description: Log a welcome message using the inputs and earlier outputs.
-    message: |
-      Welcome to Kestra, {{ inputs.user }}! 
-      We are {{ outputs.first_task.values.message }} to have you. Here is your output from the second task: {{outputs.second_task.vars}}.
 
-description: |
-  **Use case:** Intro to Kestra that collects a `user` input and writes a friendly log.
-  **Trigger:** Disabled daily run at 09:00—left in place to show how scheduling works.
-  **Highlights:**
-  - Emit sample values to demonstrate how outputs travel between tasks.
-  - Run a shell command and surface its output for downstream use.
-  - Log the combined greeting using both inputs and prior outputs.

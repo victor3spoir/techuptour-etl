@@ -1,0 +1,52 @@
+datasources:
+  postgres:
+    driverClassName: org.postgresql.Driver
+    url: jdbc:postgresql://kestra-db:5432/kestra
+    username: "kestra"
+    password: "kestra_password"
+
+kestra:
+  tutorial-flows:
+    enabled: false
+  blueprints:
+    enabled: false
+  jdbc:
+    queues:
+    messageProtection:
+      enabled: true
+      limit: 1048576
+
+  server:
+    basicAuth:
+      enabled: true
+  url: http://localhost:8080
+  repository:
+    type: postgres
+  storage:
+    type: minio
+    minio:
+      endpoint: http://kestra-minio
+      port: 9000
+      bucket: kestra
+      region: us-east-1
+  queue:
+    type: postgres
+  tasks:
+    tmpDir:
+      path: "/tmp/kestra-wd/tmp"
+  plugins:
+    configurations:
+      - type: io.kestra.plugin.scripts.runner.docker.Docker
+        values:
+          network: etl-net
+          volume-enabled: true
+      - type: io.kestra.plugin.fs.local.Download
+        values: 
+          allowed-paths: 
+            - /usr/app/scripts
+micronaut:
+  io:
+    watch:
+      enabled: true
+      paths:
+        - /usr/app/local_flows

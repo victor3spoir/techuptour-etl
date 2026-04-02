@@ -1,0 +1,45 @@
+id: download_bank
+namespace: demo
+labels:
+  - bank
+  - download
+
+tasks:
+  - id: bank_download_zip
+    type: io.kestra.plugin.core.http.Download
+    uri: https://maven-datasets.s3.amazonaws.com/Bank+Customer+Churn/Bank+Customer+Churn.zip
+    retry:
+      type: constant
+      waitDuration: PT10S
+      interval: 30s
+
+  - id: bank_unzip_file
+    type: io.kestra.plugin.compress.ArchiveDecompress
+    from: "{{ outputs.bank_download_zip.uri }}"
+    algorithm: ZIP
+    
+
+  - id: parse_csv_to_json
+    type: io.kestra.plugin.scripts.python.Commands
+    containerImage: python:3.11-slim
+    dependencies:
+      - pandas
+      - fsspec
+    inputFiles:
+      bank_data.csv: "{{ outputs.bank_unzip_file.files['Bank_Churn_Data_Dictionary.csv'] }}"
+      main.py: |
+        import pandas as pd
+        import json
+        import os
+
+        csv_path = "bank_data.csv"
+        
+        df = pd.read_csv(csv_path)
+        json_data = df.to_json(orient='records', indent=4)
+        
+        with open('bank_customer.json', 'w') as f:
+            f.write(json_data)
+    commands:
+      - python main.py
+    outputFiles:
+      - bank_customer.json

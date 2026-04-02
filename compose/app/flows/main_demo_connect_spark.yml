@@ -2,17 +2,26 @@ id: connect_spark
 namespace: demo
 
 tasks:
-  - id: process_data
-    type: io.kestra.plugin.spark.PythonSubmit
-    master: spark://spark:7077
+  - id: download_file
+    type: io.kestra.plugin.fs.local.Download
+    from: "/usr/app/scripts/demo.py"
 
-    taskRunner:
+  - id: process_api_data_with_spark
+    type: io.kestra.plugin.spark.SparkCLI
+    containerImage: spark:4.0.1-python3
+    # master: spark://spark:7077
+    inputFiles:
+      main.py: "{{ outputs.download_file.uri }}"
+    beforeCommands:
+      - pip install fsspec pandas
+    taskRunner: 
       type: io.kestra.plugin.scripts.runner.docker.Docker
+      user: "root"
       networkMode: etl-net
-      volumes:
-        - /usr/app/scripts:/opt/kestra/scripts
-
-    mainScript: /opt/kestra/scripts/main.py
-
-    outputFiles:
-      - output.json
+    commands:
+      - |
+        spark-submit --name Pi \
+          --conf spark.executor.cores=1 \
+          --conf spark.executor.memory=512m \
+          --conf spark.cores.max=1 \
+          --master spark://spark:7077 main.py
