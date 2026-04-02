@@ -21,10 +21,6 @@ class GitHubProject(BaseModel):
     fetched_at: str
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 _REPO_HREF = re.compile(r"^/[\w.\-]+/[\w.\-]+$")
 _TOPIC_HREF = re.compile(r"^/topics/")
 _STARS_HREF = re.compile(r"/stargazers")
