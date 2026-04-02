@@ -10,6 +10,10 @@ variables:
 tasks:
   - id: database_extraction
     type: io.kestra.plugin.core.flow.Sequential
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempt: 3 
     tasks:
       - id: extract_from_db
         type: io.kestra.plugin.scripts.python.Commands
@@ -43,5 +47,5 @@ tasks:
         accessKeyId: "{{vars.minio_access_key}}"
         secretKeyId: "{{vars.minio_secret_key}}"
         bucket: "bronze"
-        from: "{{extract_from_db.outputFiles['consumption.json']}}"
-        key: "bronze/db/{{now() | date('yyyy-MM-dd')}}/data.json"
+        from: "{{ outputs.extract_from_db.outputFiles['consumption.json']}}"
+        key: "db/{{now() | date('yyyy-MM-dd')}}/data.json"

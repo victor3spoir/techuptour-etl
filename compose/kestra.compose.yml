@@ -19,7 +19,6 @@ services:
       MINIO_ROOT_PASSWORD: minio_password
     volumes:
       - kestra-minio-vol:/data:rw
-      # - ./app/scripts:/data/kestra/namespaces/demo/_files:rw
 
   kestra-db:
     image: postgres:18-alpine
@@ -84,8 +83,6 @@ services:
       - ./app/scripts:/usr/app/scripts:rw
 
 
-
-# for prod, creds should not set in plain, maybe by env
 
 configs:
   kestra_yaml:

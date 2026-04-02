@@ -7,114 +7,151 @@ triggers:
     cron: "0 0 0 * * *" # Runs every day at 00:00:00 UTC
     withSeconds: true
     timezone: "UTC"
+
+variables:
+  minio_access_key: minio
+  minio_secret_key: minio_password
+  minio_endpoint: http://minio:9000
+  minio_region: "us-east-1"
+
 tasks:
-  - id: download_github_script
-    type: io.kestra.plugin.fs.local.Download
-    from: "/usr/app/scripts/extract_github_projects.py"
-    
-  - id: extract_github_projects
-    type: io.kestra.plugin.scripts.python.Commands
-    inputFiles:
-      main.py: "{{ outputs.download_github_script.uri }}"
-    outputFiles:
-      - "*.json"
-    taskRunner:
-      type: io.kestra.plugin.scripts.runner.docker.Docker
-    dependencies:
-      - httpx
-      - beautifulsoup4
-      - lxml
-      - pydantic
-      - fsspec
-    commands:
-      - python main.py
+  - id: acquire_data
+    type: io.kestra.plugin.core.flow.Parallel
+    retry:
+      type: constant
+      maxAttempt: 3
+      interval: PT10S
+    tasks:
+      - id: extract_bank_data
+        type: io.kestra.plugin.core.flow.Sequential
+        retry:
+          type: constant
+          interval: PT10S
+          maxAttempt: 3 
+        tasks:
+          - id: bank_download_zip
+            type: io.kestra.plugin.core.http.Download
+            uri: https://maven-datasets.s3.amazonaws.com/Bank+Customer+Churn/Bank+Customer+Churn.zip
+            retry:
+              type: constant
+              interval: PT10S
+              maxAttempt: 3
 
-  - id: extract_from_db
-    type: io.kestra.plugin.scripts.python.Commands
-    taskRunner:
-      type: io.kestra.plugin.scripts.runner.docker.Docker
-      networkMode: etl-net
-    dependencies:
-      - pandas
-      - sqlalchemy
-      - psycopg2-binary
-      - fsspec
-    inputFiles:
-      main.py: |
-        import pandas as pd
-        from sqlalchemy import create_engine
-        engine = create_engine('postgresql://postgres:postgres@extract-db:5432/postgres')
-        df = pd.read_sql_query('SELECT * FROM power_consumption', engine)
-        
-        df.to_json('consumption.json', orient='records', indent=4, date_format='iso')
-        print('Extraction complete.')
+          - id: bank_unzip_file
+            type: io.kestra.plugin.compress.ArchiveDecompress
+            from: "{{ outputs.bank_download_zip.uri }}"
+            algorithm: ZIP
+            
 
-    commands:
-      - python main.py
-    outputFiles:
-      - consumption.json
+          - id: parse_csv_to_json
+            type: io.kestra.plugin.scripts.python.Commands
+            containerImage: python:3.11-slim
+            dependencies:
+              - pandas
+              - fsspec
+            inputFiles:
+              bank_data.csv: "{{ outputs.bank_unzip_file.files['Bank_Churn.csv'] }}"
+              main.py: |
+                import pandas as pd
+                import json
+                import os
 
-  - id: download_zip
-    type: io.kestra.plugin.core.http.Download
-    uri: https://maven-datasets.s3.amazonaws.com/Bank+Customer+Churn/Bank+Customer+Churn.zip
+                csv_path = "bank_data.csv"
+                
+                df = pd.read_csv(csv_path)
+                json_data = df.to_json(orient='records', indent=4)
+                
+                with open('bank_data.json', 'w') as f:
+                    f.write(json_data)
+            commands:
+              - python main.py
+            outputFiles:
+              - bank_data.json
 
-  - id: unzip_file
-    type: io.kestra.plugin.compress.ArchiveDecompress
-    from: "{{ outputs.download_zip.uri }}"
-    algorithm: ZIP
-    
+          - id: upload_bank_to_minio
+            type: io.kestra.plugin.minio.Upload
+            endpoint: "{{vars.minio_endpoint}}"
+            accessKeyId: "{{vars.minio_access_key}}"
+            secretKeyId: "{{vars.minio_secret_key}}"
+            bucket: "bronze"
+            from: "{{ outputs.parse_csv_to_json.outputFiles['bank_data.json'] }}"
+            key: "file/{{now() | date('yyyy-MM-dd')}}/data.json"
 
-  - id: parse_csv_to_json
-    type: io.kestra.plugin.scripts.python.Commands
-    containerImage: python:3.11-slim
-    dependencies:
-      - pandas
-      - fsspec
-    inputFiles:
-      main.py: |
-        import pandas as pd
-        import json
-        import os
+      - id: database_extraction
+        type: io.kestra.plugin.core.flow.Sequential
+        retry:
+          type: constant
+          interval: PT10S
+          maxAttempt: 3 
+        tasks:
+          - id: extract_from_db
+            type: io.kestra.plugin.scripts.python.Commands
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              networkMode: etl-net
+            dependencies:
+              - pandas
+              - sqlalchemy
+              - psycopg2-binary
+              - fsspec
+            inputFiles:
+              main.py: |
+                import pandas as pd
+                from sqlalchemy import create_engine
 
-        csv_path = "{{ outputs.unzip_file.files['Bank_Churn_Data_Dictionary.csv'] }}"
-        
-        df = pd.read_csv(csv_path)
-        json_data = df.to_json(orient='records', indent=4)
-        
-        with open('bank_customer.json', 'w') as f:
-            f.write(json_data)
-    commands:
-      - python main.py
-    outputFiles:
-      - bank_customer.json
+                engine = create_engine("postgresql://postgres:postgres@extract-db:5432/postgres")
 
+                df = pd.read_sql_query("SELECT * FROM power_consumption", engine)
 
-  # - id: process_api_data_with_spark
-  #   type: io.kestra.plugin.spark.PythonSubmit
-  #   master: spark://spark:7077
-  #   deployMode: "CLIENT"
-  #   mainScript: ""
-  #   taskRunner: 
-  #     type: io.kestra.plugin.scripts.runner.docker.Docker
-  #     image: "apache/spark:3.5.1-java17-r"
-  #     user: root
-  #     networkMode: "host"
-  #     volumes:
-  #       - "/usr/app:/usr/app:rw"
+                df.to_json("consumption.json", orient="records", indent=4, date_format="iso")
+                print("Extraction complete.")
+            commands:
+              - python main.py
+            outputFiles:
+              - consumption.json
 
-  - id: create_minio_bucket
-    type: io.kestra.plugin.minio.CreateBucket
-    endpoint: http://minio:9000 
-    region: "us-east-1"
-    secretKeyId: "minio_password"
-    accessKeyId: "minio"
-    bucket: "etl"
+          - id: upload_db_to_minio
+            type: io.kestra.plugin.minio.Upload
+            endpoint: "{{vars.minio_endpoint}}"
+            accessKeyId: "{{vars.minio_access_key}}"
+            secretKeyId: "{{vars.minio_secret_key}}"
+            bucket: "bronze"
+            from: "{{ outputs.extract_from_db.outputFiles['consumption.json']}}"
+            key: "db/{{now() | date('yyyy-MM-dd')}}/data.json"
 
-  # - id: upload_processed_data_to_minio
-  #   type: io.kestra.plugin.minio.Upload
-
-
-
-
-
-
+      - id: github_projects_extraction
+        type: io.kestra.plugin.core.flow.Sequential
+        retry:
+          type: constant
+          interval: PT10S
+          maxAttempt: 3 
+        tasks:
+          - id: download_github_script
+            type: io.kestra.plugin.fs.local.Download
+            from: "/usr/app/scripts/extract_github_projects.py"
+            
+          - id: extract_github_projects
+            type: io.kestra.plugin.scripts.python.Commands
+            inputFiles:
+              main.py: "{{ outputs.download_github_script.uri }}"
+            outputFiles:
+              - "*.json"
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+            dependencies:
+              - httpx
+              - beautifulsoup4
+              - lxml
+              - pydantic
+              - fsspec
+            commands:
+              - python main.py
+          
+          - id: upload_project_to_minio
+            type: io.kestra.plugin.minio.Upload
+            endpoint: "{{vars.minio_endpoint}}"
+            accessKeyId: "{{vars.minio_access_key}}"
+            secretKeyId: "{{vars.minio_secret_key}}"
+            bucket: "bronze"
+            from: "{{ outputs.extract_github_projects.outputFiles['projects.json']}}"
+            key: "web/{{now() | date('yyyy-MM-dd')}}/data.json"

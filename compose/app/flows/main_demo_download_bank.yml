@@ -14,7 +14,7 @@ tasks:
     retry:
       type: constant
       interval: PT10S
-      waitDuration: 20s 
+      maxAttempt: 3 
     tasks:
       - id: bank_download_zip
         type: io.kestra.plugin.core.http.Download
@@ -22,7 +22,7 @@ tasks:
         retry:
           type: constant
           interval: PT10S
-          waitDuration: 10s
+          maxAttempt: 3
 
       - id: bank_unzip_file
         type: io.kestra.plugin.compress.ArchiveDecompress
@@ -37,7 +37,7 @@ tasks:
           - pandas
           - fsspec
         inputFiles:
-          bank_data.csv: "{{ outputs.bank_unzip_file.files['Bank_Churn_Data_Dictionary.csv'] }}"
+          bank_data.csv: "{{ outputs.bank_unzip_file.files['Bank_Churn.csv'] }}"
           main.py: |
             import pandas as pd
             import json
@@ -61,5 +61,5 @@ tasks:
         accessKeyId: "{{vars.minio_access_key}}"
         secretKeyId: "{{vars.minio_secret_key}}"
         bucket: "bronze"
-        from: "{{ parse_csv_to_json.outputFiles['bank_data.json'] }}"
-        key: "bronze/file/{{now() | date('yyyy-MM-dd')}}/data.json"
+        from: "{{ outputs.parse_csv_to_json.outputFiles['bank_data.json'] }}"
+        key: "file/{{now() | date('yyyy-MM-dd')}}/data.json"

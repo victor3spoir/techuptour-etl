@@ -2,24 +2,46 @@ id: github_projects
 namespace: demo
 description: "Extract github projects"
 
+variables:
+  minio_access_key: minio
+  minio_secret_key: minio_password
+  minio_endpoint: http://minio:9000
+  minio_region: "us-east-1"
+
 tasks:
-  - id: download_github_script
-    type: io.kestra.plugin.fs.local.Download
-    from: "/usr/app/scripts/extract_github_projects.py"
-    
-  - id: extract_github_projects
-    type: io.kestra.plugin.scripts.python.Commands
-    inputFiles:
-      main.py: "{{ outputs.download_github_script.uri }}"
-    outputFiles:
-      - "*.json"
-    taskRunner:
-      type: io.kestra.plugin.scripts.runner.docker.Docker
-    dependencies:
-      - httpx
-      - beautifulsoup4
-      - lxml
-      - pydantic
-      - fsspec
-    commands:
-      - python main.py
+  - id: github_projects_extraction
+    type: io.kestra.plugin.core.flow.Sequential
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempt: 3 
+    tasks:
+      - id: download_github_script
+        type: io.kestra.plugin.fs.local.Download
+        from: "/usr/app/scripts/extract_github_projects.py"
+        
+      - id: extract_github_projects
+        type: io.kestra.plugin.scripts.python.Commands
+        inputFiles:
+          main.py: "{{ outputs.download_github_script.uri }}"
+        outputFiles:
+          - "*.json"
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        dependencies:
+          - httpx
+          - beautifulsoup4
+          - lxml
+          - pydantic
+          - fsspec
+        commands:
+          - python main.py
+      
+      - id: upload_to_minio
+        type: io.kestra.plugin.minio.Upload
+        endpoint: "{{vars.minio_endpoint}}"
+        accessKeyId: "{{vars.minio_access_key}}"
+        secretKeyId: "{{vars.minio_secret_key}}"
+        bucket: "bronze"
+        from: "{{ outputs.extract_github_projects.outputFiles['projects.json']}}"
+        key: "web/{{now() | date('yyyy-MM-dd')}}/data.json"

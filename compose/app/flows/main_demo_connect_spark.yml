@@ -1,27 +1,63 @@
 id: connect_spark
 namespace: demo
 
-tasks:
-  - id: download_file
-    type: io.kestra.plugin.fs.local.Download
-    from: "/usr/app/scripts/demo.py"
+variables:
+  minio_access_key: minio
+  minio_secret_key: minio_password
+  minio_endpoint: http://minio:9000
+  minio_region: "us-east-1"
+  process_date: "{{ now() | date('yyyy-MM-dd') }}"
 
-  - id: process_api_data_with_spark
-    type: io.kestra.plugin.spark.SparkCLI
-    containerImage: spark:4.0.1-python3
-    # master: spark://spark:7077
-    inputFiles:
-      main.py: "{{ outputs.download_file.uri }}"
-    beforeCommands:
-      - pip install fsspec pandas
-    taskRunner: 
-      type: io.kestra.plugin.scripts.runner.docker.Docker
-      user: "root"
-      networkMode: etl-net
-    commands:
-      - |
-        spark-submit --name Pi \
-          --conf spark.executor.cores=1 \
-          --conf spark.executor.memory=512m \
-          --conf spark.cores.max=1 \
-          --master spark://spark:7077 main.py
+tasks:
+  - id: process_db_data
+    type: io.kestra.plugin.core.flow.Sequential
+    retry: 
+      type: constant
+      maxAttempts: 3
+      interval: PT10s
+    tasks:
+      - id: download_db_script
+        type: io.kestra.plugin.fs.local.Download
+        from: "/usr/app/scripts/process_db.py"
+
+
+
+      - id: process_api_data_with_spark
+        type: io.kestra.plugin.spark.SparkCLI
+        
+        containerImage: spark:4.0.1-python3
+        inputFiles:
+          main.py: "{{ outputs.download_db_script.uri }}"
+          run.sh: |
+            #!/bin/bash
+            set -e
+            spark-submit \
+              --master spark://spark:7077 \
+              --deploy-mode client \
+              --packages org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262 \
+              main.py "$1"
+        outputFiles:
+          - "*"
+        beforeCommands:
+          - pip install fsspec pandas s3fs
+        taskRunner: 
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+          user: "root"
+          networkMode: etl-net
+        env:
+          MINIO_ENDPOINT: "{{vars.minio_endpoint}}"
+          MINIO_ACCESS_KEY: "{{vars.minio_access_key}}"
+          MINIO_SECRET_KEY: "{{vars.minio_secret_key}}"
+          MINIO_REGION: "{{vars.minio_region}}"
+          
+        commands:
+          - bash run.sh "{{vars.process_date}}"
+      - id: upload_process_db_to_minio
+        type: io.kestra.plugin.minio.Upload
+        endpoint: "{{vars.minio_endpoint}}"
+        accessKeyId: "{{vars.minio_access_key}}"
+        secretKeyId: "{{vars.minio_secret_key}}"
+        bucket: "silver"
+        from: "{{ outputs.process_api_data_with_spark.outputFiles['processed_power_data.parquet'] }}"
+        key: "db/{{ now() | date('yyyy-MM-dd') }}/data.json"
+
