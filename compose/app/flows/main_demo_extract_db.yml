@@ -1,24 +1,47 @@
 id: extract_db
 namespace: demo
 
-tasks:
-  - id: download_extract_db
-    type: io.kestra.plugin.fs.local.Download
-    from: "/usr/app/scripts/extract_db.py"
-  - id: extract_from_db
-    type: io.kestra.plugin.scripts.python.Commands
-    taskRunner:
-      type: io.kestra.plugin.scripts.runner.docker.Docker
-      networkMode: etl-net
-    dependencies:
-      - pandas
-      - sqlalchemy
-      - psycopg2-binary
-      - fsspec
-    inputFiles:
-      main.py: "{{outputs.download_extract_db.uri}}"
+variables:
+  minio_access_key: minio
+  minio_secret_key: minio_password
+  minio_endpoint: http://minio:9000
+  minio_region: "us-east-1"
 
-    commands:
-      - python main.py
-    outputFiles:
-      - consumption.json
+tasks:
+  - id: database_extraction
+    type: io.kestra.plugin.core.flow.Sequential
+    tasks:
+      - id: extract_from_db
+        type: io.kestra.plugin.scripts.python.Commands
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+          networkMode: etl-net
+        dependencies:
+          - pandas
+          - sqlalchemy
+          - psycopg2-binary
+          - fsspec
+        inputFiles:
+          main.py: |
+            import pandas as pd
+            from sqlalchemy import create_engine
+
+            engine = create_engine("postgresql://postgres:postgres@extract-db:5432/postgres")
+
+            df = pd.read_sql_query("SELECT * FROM power_consumption", engine)
+
+            df.to_json("consumption.json", orient="records", indent=4, date_format="iso")
+            print("Extraction complete.")
+        commands:
+          - python main.py
+        outputFiles:
+          - consumption.json
+
+      - id: upload_to_minio
+        type: io.kestra.plugin.minio.Upload
+        endpoint: "{{vars.minio_endpoint}}"
+        accessKeyId: "{{vars.minio_access_key}}"
+        secretKeyId: "{{vars.minio_secret_key}}"
+        bucket: "bronze"
+        from: "{{extract_from_db.outputFiles['consumption.json']}}"
+        key: "bronze/db/{{now() | date('yyyy-MM-dd')}}/data.json"

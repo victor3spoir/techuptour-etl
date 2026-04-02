@@ -1,45 +1,65 @@
 id: download_bank
 namespace: demo
-labels:
-  - bank
-  - download
+
+variables:
+  minio_access_key: minio
+  minio_secret_key: minio_password
+  minio_endpoint: http://minio:9000
+  minio_region: "us-east-1"
+
 
 tasks:
-  - id: bank_download_zip
-    type: io.kestra.plugin.core.http.Download
-    uri: https://maven-datasets.s3.amazonaws.com/Bank+Customer+Churn/Bank+Customer+Churn.zip
+  - id: extract_bank_data
+    type: io.kestra.plugin.core.flow.Sequential
     retry:
       type: constant
-      waitDuration: PT10S
-      interval: 30s
+      interval: PT10S
+      waitDuration: 20s 
+    tasks:
+      - id: bank_download_zip
+        type: io.kestra.plugin.core.http.Download
+        uri: https://maven-datasets.s3.amazonaws.com/Bank+Customer+Churn/Bank+Customer+Churn.zip
+        retry:
+          type: constant
+          interval: PT10S
+          waitDuration: 10s
 
-  - id: bank_unzip_file
-    type: io.kestra.plugin.compress.ArchiveDecompress
-    from: "{{ outputs.bank_download_zip.uri }}"
-    algorithm: ZIP
-    
-
-  - id: parse_csv_to_json
-    type: io.kestra.plugin.scripts.python.Commands
-    containerImage: python:3.11-slim
-    dependencies:
-      - pandas
-      - fsspec
-    inputFiles:
-      bank_data.csv: "{{ outputs.bank_unzip_file.files['Bank_Churn_Data_Dictionary.csv'] }}"
-      main.py: |
-        import pandas as pd
-        import json
-        import os
-
-        csv_path = "bank_data.csv"
+      - id: bank_unzip_file
+        type: io.kestra.plugin.compress.ArchiveDecompress
+        from: "{{ outputs.bank_download_zip.uri }}"
+        algorithm: ZIP
         
-        df = pd.read_csv(csv_path)
-        json_data = df.to_json(orient='records', indent=4)
-        
-        with open('bank_customer.json', 'w') as f:
-            f.write(json_data)
-    commands:
-      - python main.py
-    outputFiles:
-      - bank_customer.json
+
+      - id: parse_csv_to_json
+        type: io.kestra.plugin.scripts.python.Commands
+        containerImage: python:3.11-slim
+        dependencies:
+          - pandas
+          - fsspec
+        inputFiles:
+          bank_data.csv: "{{ outputs.bank_unzip_file.files['Bank_Churn_Data_Dictionary.csv'] }}"
+          main.py: |
+            import pandas as pd
+            import json
+            import os
+
+            csv_path = "bank_data.csv"
+            
+            df = pd.read_csv(csv_path)
+            json_data = df.to_json(orient='records', indent=4)
+            
+            with open('bank_data.json', 'w') as f:
+                f.write(json_data)
+        commands:
+          - python main.py
+        outputFiles:
+          - bank_data.json
+
+      - id: upload_to_minio
+        type: io.kestra.plugin.minio.Upload
+        endpoint: "{{vars.minio_endpoint}}"
+        accessKeyId: "{{vars.minio_access_key}}"
+        secretKeyId: "{{vars.minio_secret_key}}"
+        bucket: "bronze"
+        from: "{{ parse_csv_to_json.outputFiles['bank_data.json'] }}"
+        key: "bronze/file/{{now() | date('yyyy-MM-dd')}}/data.json"
