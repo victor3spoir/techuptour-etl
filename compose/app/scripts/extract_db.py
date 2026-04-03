@@ -1,11 +1,20 @@
 import pandas as pd
 from sqlalchemy import create_engine
 
-engine = create_engine("postgresql://postgres:postgres@extract-db:5432/postgres")
 
-# SQL to DataFrame
-df = pd.read_sql_query("SELECT * FROM power_consumption", engine)
+def extract_data(
+    db_url: str = "postgresql://postgres:postgres@extract-db:5432/postgres",
+) -> pd.DataFrame:
+    engine = create_engine(db_url)
+    df = pd.read_sql_query("SELECT * FROM power_consumption", engine)
+    return df
 
-# Output to JSON with ISO date format
-df.to_json("consumption.json", orient="records", indent=4, date_format="iso")
-print("Extraction complete.")
+
+def save_data(df: pd.DataFrame, output_path: str = "consumption.json") -> None:
+    df.to_json(output_path, orient="records", indent=4, date_format="iso")
+    print(f"Extraction complete - {len(df)} records saved to {output_path}")
+
+
+if __name__ == "__main__":
+    df = extract_data()
+    save_data(df)

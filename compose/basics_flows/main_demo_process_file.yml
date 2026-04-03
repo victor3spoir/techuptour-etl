@@ -1,0 +1,70 @@
+id: process_file
+namespace: demo
+
+variables:
+  minio_access_key: minio
+  minio_secret_key: minio_password
+  minio_endpoint: http://minio:9000
+  minio_region: "us-east-1"
+  process_date: "{{ now() | date('yyyy-MM-dd') }}"
+
+tasks:
+  - id: process_file_data
+    type: io.kestra.plugin.core.flow.Sequential
+    retry: 
+      type: constant
+      maxAttempts: 3
+      interval: PT10s
+    tasks:
+      - id: download_file_data_bronze
+        type: io.kestra.plugin.minio.Download
+        endpoint: "{{vars.minio_endpoint}}"
+        accessKeyId: "{{vars.minio_access_key}}"
+        secretKeyId: "{{vars.minio_secret_key}}"
+        bucket: "bronze"
+        key: "file/{{render(vars.process_date)}}/data.json"
+
+      - id: download_file_script
+        type: io.kestra.plugin.fs.local.Download
+        from: "/usr/app/scripts/process_file.py"
+
+      - id: process_file_spark
+        type: io.kestra.plugin.spark.SparkCLI
+        
+        inputFiles:
+          main.py: "{{ outputs.download_file_script.uri }}"
+          data.json: "{{ outputs.download_file_data_bronze.uri }}"
+          run.sh: |
+            #!/bin/bash
+            set -e
+            ls -la
+            spark-submit \
+              --master spark://spark:7077 \
+              --deploy-mode client \
+              --executor-memory 512M \
+              --driver-memory 512M \
+              --conf spark.cores.max=1 \
+              --files data.json \
+              --conf spark.driver.host=$(hostname -i) \
+              --conf spark.driver.bindAddress=0.0.0.0 \
+              main.py
+        beforeCommands:
+          - pip install --no-cache-dir -q pandas fsspec pyarrow
+        outputFiles:
+          - "**.json"
+        containerImage: apache/spark:4.0.2-python3
+        taskRunner: 
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+          user: "root"
+          networkMode: etl-net
+        commands:
+          - bash run.sh
+
+      - id: upload_file_silver
+        type: io.kestra.plugin.minio.Upload
+        endpoint: "{{vars.minio_endpoint}}"
+        accessKeyId: "{{vars.minio_access_key}}"
+        secretKeyId: "{{vars.minio_secret_key}}"
+        bucket: "silver"
+        from: "{{ outputs.process_file_spark.outputFiles['output.json'] }}"
+        key: "file/{{ render(vars.process_date)}}/data.json"

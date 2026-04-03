@@ -13,8 +13,29 @@ variables:
   minio_secret_key: minio_password
   minio_endpoint: http://minio:9000
   minio_region: "us-east-1"
+  process_date: "{{ now() | date('yyyy-MM-dd') }}"
 
 tasks:
+
+  - id: create_buckets
+    type: io.kestra.plugin.core.flow.Parallel
+    tasks:
+      - id: create_bronze_bucket
+        type: io.kestra.plugin.minio.CreateBucket
+        endpoint: "{{vars.minio_endpoint}}"
+        region:  "{{vars.minio_region}}"
+        accessKeyId:  "{{vars.minio_access_key}}"
+        secretKeyId:  "{{vars.minio_secret_key}}"
+        bucket: "bronze"
+        
+      - id: create_silver_bucket
+        type: io.kestra.plugin.minio.CreateBucket
+        endpoint: "{{vars.minio_endpoint}}"
+        region:  "{{vars.minio_region}}"
+        accessKeyId:  "{{vars.minio_access_key}}"
+        secretKeyId:  "{{vars.minio_secret_key}}"
+        bucket: "silver"
+
   - id: acquire_data
     type: io.kestra.plugin.core.flow.Parallel
     retry:
@@ -75,7 +96,7 @@ tasks:
             secretKeyId: "{{vars.minio_secret_key}}"
             bucket: "bronze"
             from: "{{ outputs.parse_csv_to_json.outputFiles['bank_data.json'] }}"
-            key: "file/{{now() | date('yyyy-MM-dd')}}/data.json"
+            key: "file/{{ render(vars.process_date) }}/data.json"
 
       - id: database_extraction
         type: io.kestra.plugin.core.flow.Sequential
@@ -117,7 +138,7 @@ tasks:
             secretKeyId: "{{vars.minio_secret_key}}"
             bucket: "bronze"
             from: "{{ outputs.extract_from_db.outputFiles['consumption.json']}}"
-            key: "db/{{now() | date('yyyy-MM-dd')}}/data.json"
+            key: "db/{{ render(vars.process_date) }}/data.json"
 
       - id: github_projects_extraction
         type: io.kestra.plugin.core.flow.Sequential
@@ -128,7 +149,7 @@ tasks:
         tasks:
           - id: download_github_script
             type: io.kestra.plugin.fs.local.Download
-            from: "/usr/app/scripts/extract_github_projects.py"
+            from: "/usr/app/scripts/extract_web.py"
             
           - id: extract_github_projects
             type: io.kestra.plugin.scripts.python.Commands
@@ -154,4 +175,216 @@ tasks:
             secretKeyId: "{{vars.minio_secret_key}}"
             bucket: "bronze"
             from: "{{ outputs.extract_github_projects.outputFiles['projects.json']}}"
-            key: "web/{{now() | date('yyyy-MM-dd')}}/data.json"
+            key: "web/{{ render(vars.process_date) }}/data.json"
+
+  - id: process_data
+    type: io.kestra.plugin.core.flow.Parallel
+    retry:
+      type: constant
+      maxAttempt: 3
+      interval: PT10S
+    tasks:
+      - id: process_db_data
+        type: io.kestra.plugin.core.flow.Sequential
+        retry: 
+          type: constant
+          maxAttempts: 3
+          interval: PT10s
+        tasks:
+          - id: download_db_bronze
+            type: io.kestra.plugin.minio.Download
+            endpoint: "{{vars.minio_endpoint}}"
+            accessKeyId: "{{vars.minio_access_key}}"
+            secretKeyId: "{{vars.minio_secret_key}}"
+            bucket: "bronze"
+            key: "db/{{render(vars.process_date)}}/data.json"
+
+          - id: download_db_script
+            type: io.kestra.plugin.fs.local.Download
+            from: "/usr/app/scripts/process_db.py"
+
+          - id: process_db_spark
+            type: io.kestra.plugin.spark.SparkCLI
+            
+            inputFiles:
+              main.py: "{{ outputs.download_db_script.uri }}"
+              data.json: "{{ outputs.download_db_bronze.uri }}"
+              run.sh: |
+                #!/bin/bash
+                set -e
+                ls -la
+                spark-submit \
+                  --master spark://spark:7077 \
+                  --deploy-mode client \
+                  --executor-memory 512M \
+                  --driver-memory 512M \
+                  --conf spark.cores.max=1 \
+                  --files data.json \
+                  --conf spark.driver.host=$(hostname -i) \
+                  --conf spark.driver.bindAddress=0.0.0.0 \
+                  main.py
+            beforeCommands:
+              - pip install --no-cache-dir -q pandas fsspec pyarrow
+            outputFiles:
+              - "**.json"
+            containerImage: apache/spark:4.0.2-python3
+            taskRunner: 
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              user: "root"
+              networkMode: etl-net
+            commands:
+              - bash run.sh
+
+          - id: upload_db_silver
+            type: io.kestra.plugin.minio.Upload
+            endpoint: "{{vars.minio_endpoint}}"
+            accessKeyId: "{{vars.minio_access_key}}"
+            secretKeyId: "{{vars.minio_secret_key}}"
+            bucket: "silver"
+            from: "{{ outputs.process_db_spark.outputFiles['output.json'] }}"
+            key: "db/{{ render(vars.process_date)}}/data.json"
+
+      - id: process_file_data
+        type: io.kestra.plugin.core.flow.Sequential
+        retry: 
+          type: constant
+          maxAttempts: 3
+          interval: PT10s
+        tasks:
+          - id: download_file_data_bronze
+            type: io.kestra.plugin.minio.Download
+            endpoint: "{{vars.minio_endpoint}}"
+            accessKeyId: "{{vars.minio_access_key}}"
+            secretKeyId: "{{vars.minio_secret_key}}"
+            bucket: "bronze"
+            key: "file/{{render(vars.process_date)}}/data.json"
+
+          - id: download_file_script
+            type: io.kestra.plugin.fs.local.Download
+            from: "/usr/app/scripts/process_file.py"
+
+          - id: process_file_spark
+            type: io.kestra.plugin.spark.SparkCLI
+            
+            inputFiles:
+              main.py: "{{ outputs.download_file_script.uri }}"
+              data.json: "{{ outputs.download_file_data_bronze.uri }}"
+              run.sh: |
+                #!/bin/bash
+                set -e
+                ls -la
+                spark-submit \
+                  --master spark://spark:7077 \
+                  --deploy-mode client \
+                  --executor-memory 512M \
+                  --driver-memory 512M \
+                  --conf spark.cores.max=1 \
+                  --files data.json \
+                  --conf spark.driver.host=$(hostname -i) \
+                  --conf spark.driver.bindAddress=0.0.0.0 \
+                  main.py
+            beforeCommands:
+              - pip install --no-cache-dir -q pandas fsspec pyarrow
+            outputFiles:
+              - "**.json"
+            containerImage: apache/spark:4.0.2-python3
+            taskRunner: 
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              user: "root"
+              networkMode: etl-net
+            commands:
+              - bash run.sh
+
+          - id: upload_file_silver
+            type: io.kestra.plugin.minio.Upload
+            endpoint: "{{vars.minio_endpoint}}"
+            accessKeyId: "{{vars.minio_access_key}}"
+            secretKeyId: "{{vars.minio_secret_key}}"
+            bucket: "silver"
+            from: "{{ outputs.process_file_spark.outputFiles['output.json'] }}"
+            key: "file/{{ render(vars.process_date)}}/data.json"
+
+      - id: process_web_data
+        type: io.kestra.plugin.core.flow.Sequential
+        retry: 
+          type: constant
+          maxAttempts: 3
+          interval: PT10s
+        tasks:
+          - id: download_web_data_bronze
+            type: io.kestra.plugin.minio.Download
+            endpoint: "{{vars.minio_endpoint}}"
+            accessKeyId: "{{vars.minio_access_key}}"
+            secretKeyId: "{{vars.minio_secret_key}}"
+            bucket: "bronze"
+            key: "web/{{render(vars.process_date)}}/data.json"
+
+          - id: download_web_script
+            type: io.kestra.plugin.fs.local.Download
+            from: "/usr/app/scripts/process_web.py"
+
+          - id: process_web_spark
+            type: io.kestra.plugin.spark.SparkCLI
+            
+            inputFiles:
+              main.py: "{{ outputs.download_web_script.uri }}"
+              data.json: "{{ outputs.download_web_data_bronze.uri }}"
+              run.sh: |
+                #!/bin/bash
+                set -e
+                ls -la
+                spark-submit \
+                  --master spark://spark:7077 \
+                  --deploy-mode client \
+                  --executor-memory 512M \
+                  --driver-memory 512M \
+                  --conf spark.cores.max=1 \
+                  --files data.json \
+                  --conf spark.driver.host=$(hostname -i) \
+                  --conf spark.driver.bindAddress=0.0.0.0 \
+                  main.py
+            beforeCommands:
+              - pip install --no-cache-dir -q pandas fsspec pyarrow
+            outputFiles:
+              - "**.json"
+            containerImage: apache/spark:4.0.2-python3
+            taskRunner: 
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              user: "root"
+              networkMode: etl-net
+            commands:
+              - bash run.sh
+
+          - id: upload_web_silver
+            type: io.kestra.plugin.minio.Upload
+            endpoint: "{{vars.minio_endpoint}}"
+            accessKeyId: "{{vars.minio_access_key}}"
+            secretKeyId: "{{vars.minio_secret_key}}"
+            bucket: "silver"
+            from: "{{ outputs.process_web_spark.outputFiles['output.json'] }}"
+            key: "db/{{ render(vars.process_date)}}/data.json"
+
+  - id: notify_mailpit
+    type: io.kestra.plugin.email.MailExecution
+    host: mailpit
+    port: 1025
+    from: "kestra@local.test"
+    to: "you@local.test"
+    subject: "Task Complete: {{ flow.id }} ✅"
+    transportStrategy: SMTP
+
+    htmlTextContent: |
+      <html>
+        <body style="font-family: sans-serif; line-height: 1.5;">
+          <h2 style="color: #2e7d32;">Ah ah! Success!</h2>
+          <p>The flow <strong>{{ flow.id }}</strong> finished all tasks successfully.</p>
+          <hr />
+          <ul>
+            <li><strong>Execution ID:</strong> {{ execution.id }}</li>
+            <li><strong>Duration:</strong> {{ duration(execution.startDate, execution.endDate) }}</li>
+            <li><strong>Environment:</strong> {{ execution.labels.env }}</li>
+          </ul>
+          <p><em>Check the Kestra UI for the full logs.</em></p>
+        </body>
+      </html>
+

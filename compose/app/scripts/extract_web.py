@@ -27,7 +27,6 @@ _STARS_HREF = re.compile(r"/stargazers")
 
 
 def _parse_stars(text: str) -> Optional[int]:
-    """Convert '1,234' or '1.2k' to an integer."""
     text = text.strip().replace(",", "").replace(" ", "").lower()
     if not text:
         return None
@@ -43,7 +42,6 @@ def _parse_stars(text: str) -> Optional[int]:
 
 
 def _pick_description(article: BeautifulSoup) -> Optional[str]:
-    """Return the first <p> that is not a login-wall message."""
     for p in article.find_all("p"):
         text = p.get_text(strip=True)
         if text and "sign in" not in text.lower():
@@ -65,7 +63,7 @@ def fetch_github_explore() -> list[GitHubProject]:
         response = client.get("https://github.com/explore", headers=headers)
         response.raise_for_status()
 
-    soup = BeautifulSoup(response.text, "lxml")
+    soup = BeautifulSoup(response.text, "html.parser")
     fetched_at = datetime.now(timezone.utc).isoformat()
     projects: list[GitHubProject] = []
     seen: set[str] = set()
@@ -73,15 +71,24 @@ def fetch_github_explore() -> list[GitHubProject]:
     articles = soup.find_all("article")
 
     for article in articles:
-        heading = article.find(["h2", "h3"])
-        if not heading:
+        all_repo_links = article.find_all("a", href=_REPO_HREF)
+        if not all_repo_links:
             continue
 
-        repo_links = heading.find_all("a", href=_REPO_HREF)
-        if not repo_links:
+        href: str = ""
+        for link in all_repo_links:
+            candidate = link["href"]
+            if any(
+                skip in candidate
+                for skip in ["marketplace", "topics", "trending", "collections"]
+            ):
+                continue
+            href = candidate
+            break
+
+        if not href:
             continue
 
-        href: str = repo_links[-1]["href"]
         if href in seen:
             continue
         seen.add(href)
@@ -96,23 +103,20 @@ def fetch_github_explore() -> list[GitHubProject]:
         ]
 
         lang_el = article.find("span", itemprop="programmingLanguage")
-        if not lang_el:
-            for span in article.find_all("span"):
-                cls = " ".join(span.get("class") or [])
-                if "language" in cls.lower():
-                    lang_el = span
-                    break
         language = lang_el.get_text(strip=True) if lang_el else None
 
         stars: Optional[int] = None
         for a in article.find_all("a", href=_STARS_HREF):
             stars = _parse_stars(a.get_text(strip=True))
-            break
+            if stars:
+                break
 
-        time_el = article.find("relative-time") or article.find("time")
         updated_at: Optional[str] = None
+        time_el = article.find("relative-time") or article.find("time")
         if time_el:
             updated_at = time_el.get("datetime") or time_el.get_text(strip=True)
+
+        description = _pick_description(article)
 
         projects.append(
             GitHubProject(
@@ -120,7 +124,7 @@ def fetch_github_explore() -> list[GitHubProject]:
                 name=name,
                 full_name=f"{owner}/{name}",
                 url=f"https://github.com{href}",
-                description=_pick_description(article),
+                description=description,
                 language=language,
                 topics=topics,
                 stars=stars,
@@ -128,29 +132,6 @@ def fetch_github_explore() -> list[GitHubProject]:
                 fetched_at=fetched_at,
             )
         )
-
-    if not projects:
-        for heading in soup.find_all(["h2", "h3"]):
-            repo_links = heading.find_all("a", href=_REPO_HREF)
-            if not repo_links:
-                continue
-            href = repo_links[-1]["href"]
-            if href in seen:
-                continue
-            seen.add(href)
-            parts = href.strip("/").split("/")
-            if len(parts) != 2:
-                continue
-            owner, name = parts
-            projects.append(
-                GitHubProject(
-                    owner=owner,
-                    name=name,
-                    full_name=f"{owner}/{name}",
-                    url=f"https://github.com{href}",
-                    fetched_at=fetched_at,
-                )
-            )
 
     return projects
 
@@ -162,12 +143,12 @@ def main() -> None:
     with open("projects.json", "w") as f:
         json.dump(output, f)
 
-    print(f"\nFetched {len(output)} projects from github.com/explore", flush=True)
+    print(f"Fetched {len(output)} projects from github.com/explore")
     for p in projects:
-        stars_str = f" ⭐ {p.stars:,}" if p.stars is not None else ""
+        stars_str = f" {p.stars:,} stars" if p.stars is not None else ""
         lang_str = f"[{p.language}]" if p.language else ""
-        desc_str = f" — {p.description}" if p.description else ""
-        print(f"  • {p.full_name}{stars_str} {lang_str}{desc_str}", flush=True)
+        desc_str = f" - {p.description}" if p.description else ""
+        print(f"  {p.full_name}{stars_str} {lang_str}{desc_str}")
 
 
 if __name__ == "__main__":

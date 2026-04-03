@@ -1,0 +1,28 @@
+id: send_mail
+namespace: demo
+tasks:
+  - id: notify_mailpit
+    type: io.kestra.plugin.email.MailExecution
+    # runIf: "{{ execution.labels.env == 'lab' }}"
+    # runIf: "{{ execution.status == 'SUCCESS' }}"
+    host: mailpit
+    port: 1025
+    from: "kestra@local.test"
+    to: "you@local.test"
+    subject: "Task Complete: {{ flow.id }} ✅"
+    transportStrategy: SMTP
+
+    htmlTextContent: |
+      <html>
+        <body style="font-family: sans-serif; line-height: 1.5;">
+          <h2 style="color: #2e7d32;">Ah ah! Success!</h2>
+          <p>The flow <strong>{{ flow.id }}</strong> finished all tasks successfully.</p>
+          <hr />
+          <ul>
+            <li><strong>Execution ID:</strong> {{ execution.id }}</li>
+            <li><strong>Duration:</strong> {{ duration(execution.startDate, execution.endDate) }}</li>
+            <li><strong>Environment:</strong> {{ execution.labels.env }}</li>
+          </ul>
+          <p><em>Check the Kestra UI for the full logs.</em></p>
+        </body>
+      </html>

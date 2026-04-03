@@ -64,7 +64,7 @@ services:
     environment:
       KESTRA_URL: http://localhost:8080/
       # DOCKER_HOST: tcp://docker-proxy:2375
-      KESTRA_PLUGINS_CONFIGURATIONS_0_VALUES_HOST: tcp://docker-proxy:2375
+      # KESTRA_PLUGINS_CONFIGURATIONS_0_VALUES_HOST: tcp://docker-proxy:2375
       KESTRA_SERVER_BASIC_AUTH_USERNAME: admin@local.host
       KESTRA_SERVER_BASIC_AUTH_PASSWORD: Password123!
       KESTRA_ENCRYPTION_SECRET_KEY: 50ee98d2e259b314151c51663580aa62cebb8590ba98db336e9ccdb4c972502a

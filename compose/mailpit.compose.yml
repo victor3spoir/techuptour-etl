@@ -1,0 +1,21 @@
+name: mailpit
+
+services:
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    networks:
+      etl-net:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: "200MiB"
+    ports:
+      - '127.0.0.1:8025:8025' #ui
+    environment:
+      MP_ENABLE_PROMETHEUS: true
+
+networks:
+  elt-net:
+    external: true
