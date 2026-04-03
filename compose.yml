@@ -1,9 +1,11 @@
 name: tectup-tour
 
 include:
+  - ./compose/db.compose.yml
   - ./compose/spark.compose.yml
   - ./compose/kestra.compose.yml
   - ./compose/minio.compose.yml
+  - ./compose/mailpit.compose.yml
 
 volumes:
   minio-vol:
@@ -13,3 +15,4 @@ volumes:
 
 networks:
   etl-net:
+    external: true

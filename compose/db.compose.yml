@@ -1,0 +1,40 @@
+
+configs:
+  init_sql:
+    content: |
+      CREATE TABLE IF NOT EXISTS power_consumption (
+        id SERIAL PRIMARY KEY,
+        datetime TIMESTAMP NOT NULL,
+        temperature DECIMAL(8, 3),
+        humidity DECIMAL(6, 2),
+        wind_speed DECIMAL(8, 3),
+        general_diffuse_flows DECIMAL(10, 3),
+        diffuse_flows DECIMAL(10, 3),
+        power_consumption_zone1 DECIMAL(12, 5),
+        power_consumption_zone2 DECIMAL(12, 5),
+        power_consumption_zone3 DECIMAL(12, 5),
+        UNIQUE(datetime)
+      );
+
+      COPY power_consumption(datetime, temperature, humidity, wind_speed, general_diffuse_flows, diffuse_flows, power_consumption_zone1, power_consumption_zone2, power_consumption_zone3) 
+      FROM '/tmp/power_consumption.csv' 
+      WITH (FORMAT csv, HEADER true, DELIMITER ',');
+
+      CREATE INDEX idx_datetime ON power_consumption(datetime);
+      CREATE INDEX idx_zone1 ON power_consumption(power_consumption_zone1);
+      CREATE INDEX idx_zone2 ON power_consumption(power_consumption_zone2);
+      CREATE INDEX idx_zone3 ON power_consumption(power_consumption_zone3);
+
+services:
+  extract-db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+    networks:
+      - etl-net
+    configs:
+      - source: init_sql
+        target: /docker-entrypoint-initdb.d/01-init.sql
+    volumes:
+      - ./data/power_consumption.csv:/tmp/power_consumption.csv:ro
+

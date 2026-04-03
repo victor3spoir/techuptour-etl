@@ -1,0 +1,91 @@
+{
+  "total_energy_per_zone": {
+    "zone1_kwh": 421703.22,
+    "zone2_kwh": 252316.72,
+    "zone3_kwh": 287943.86
+  },
+  "total_energy_all_zones": 961963.8,
+  "average_consumption_per_zone": {
+    "zone1_kwh": 28113.55,
+    "zone2_kwh": 16821.11,
+    "zone3_kwh": 19196.26
+  },
+  "energy_distribution_percentage": {
+    "zone1_percent": 43.84,
+    "zone2_percent": 26.23,
+    "zone3_percent": 29.93
+  },
+  "highest_temperature_all_time": 28.234,
+  "lowest_temperature_all_time": 6.212,
+  "max_temperature_by_month": {
+    "month_1": 6.559,
+    "month_2": 8.123,
+    "month_3": 12.456,
+    "month_4": 15.789,
+    "month_5": 22.145,
+    "month_6": 25.678,
+    "month_7": 28.234,
+    "month_8": 27.456,
+    "month_9": 23.789,
+    "month_10": 18.234,
+    "month_11": 11.567,
+    "month_12": 7.89
+  },
+  "min_temperature_by_month": {
+    "month_1": 6.212,
+    "month_2": 8.123,
+    "month_3": 12.456,
+    "month_4": 15.789,
+    "month_5": 22.145,
+    "month_6": 25.678,
+    "month_7": 28.234,
+    "month_8": 27.456,
+    "month_9": 23.789,
+    "month_10": 18.234,
+    "month_11": 11.567,
+    "month_12": 7.89
+  },
+  "temperature_statistics": {
+    "average_celsius": 15.12,
+    "max_celsius": 28.234,
+    "min_celsius": 6.212
+  },
+  "humidity_statistics": {
+    "average_percent": 63.73,
+    "max_percent": 74.5,
+    "min_percent": 48.9
+  },
+  "wind_speed_statistics": {
+    "average_mps": 0.075,
+    "max_mps": 0.095,
+    "min_mps": 0.045
+  },
+  "average_consumption_by_hour": {
+    "hour_0": 68465.04,
+    "hour_12": 60338.56
+  },
+  "peak_consumption_hour": {
+    "hour": 0,
+    "average_kwh": 68465.04
+  },
+  "average_consumption_by_month": {
+    "month_1": 68587.83,
+    "month_2": 70501.0,
+    "month_3": 68501.5,
+    "month_4": 65901.5,
+    "month_5": 58501.0,
+    "month_6": 55501.0,
+    "month_7": 52601.0,
+    "month_8": 53501.0,
+    "month_9": 57401.0,
+    "month_10": 63201.0,
+    "month_11": 70501.5,
+    "month_12": 71501.0
+  },
+  "summary": {
+    "total_records": 15,
+    "months_covered": 12,
+    "date_range_start": "2017-01-01 00:00:00",
+    "date_range_end": "2017-12-01 12:00:00"
+  }
+}
