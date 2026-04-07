@@ -1,0 +1,1 @@
+Pipeline ETL automatisé qui extrait les données de trois sources (PostgreSQL, GitHub, fichiers Internet), les traite en parallèle avec un cluster Apache Spark utilisant MinIO pour le stockage, et orchestre l'ensemble via Kestra. Les utilisateurs sont notifiés par Mailpit. Toute l'infrastructure fonctionne gratuitement sur Docker Compose.
