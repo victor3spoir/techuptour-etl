@@ -1,41 +1,47 @@
-# ETL project
+# Projet ETL
 
-## Stacks
+## Description du projet
 
-- **Docker**: Containerisation
-- **Kestra**: Automation plateform
-- **Spark**: Data processing
-- **Minio**: Storage
-- **Mailpit**: Email testing and debugging
+Ce projet est un pipeline ETL automatisé qui extrait, transforme et analyse des données provenant de multiples sources. Le pipeline collecte les données de consommation d'énergie, les dépôts GitHub tendance, et les données bancaires clients d'Internet, les traite à l'aide d'Apache Spark, et stocke les résultats pour une analyse ultérieure.
 
-## How to Run
+![project-description](./project-diagram.png)
 
-### Initial Setup
+## Stack technologique
 
-Create the required Docker network:
+- **Docker**: Conteneurisation
+- **Kestra**: Plateforme d'automatisation
+- **Spark**: Traitement des données
+- **Minio**: Stockage
+- **Mailpit**: Test et débogage des courriers électroniques
+
+## Comment exécuter
+
+### Configuration initiale
+
+Créez le réseau Docker requis :
 
 ```bash
 docker network create etl-net
 ```
 
-### Start the Stack
+### Démarrer la pile
 
-Launch all services:
+Lancez tous les services :
 
 ```bash
 docker compose up -d
 ```
 
-### Access the Platforms
+### Accéder aux plateformes
 
-Once all containers are running, access the web interfaces:
+Une fois tous les conteneurs en cours d'exécution, accédez aux interfaces Web :
 
-- **Kestra Dashboard**: <http://localhost:8080>
-- **Spark Web UI**: <http://localhost:30081/>
-- **MinIO Console**: <http://localhost:9001>
-- **Mailpit Email UI**: <http://localhost:8025>
+- **Tableau de bord Kestra**: <http://localhost:8080>
+- **Interface Web Spark**: <http://localhost:30081/>
+- **Console MinIO**: <http://localhost:9001>
+- **Interface de courrier Mailpit**: <http://localhost:8025>
 
-### Credentials
+### Identifiants
 
 ```yaml
 kestra:
@@ -47,72 +53,68 @@ minio:
   password: minio_password
 ```
 
-## Project Description
+## Sources de données
 
-This project is an automated ETL pipeline that extracts, transforms, and analyzes data from multiple sources. The pipeline collects power consumption data, GitHub trending repositories, and customer bank data from the internet, processes them using Apache Spark, and stores the results for further analysis.
+Le système traite les données provenant de trois sources principales :
 
-## Data Sources
+1. **Données de consommation d'énergie locales** - Enregistrements historiques de consommation d'énergie pour trois zones avec des métriques environnementales incluant la température, l'humidité, la vitesse du vent et les flux diffus solaires.
 
-The system processes data from three main sources:
+2. **Page GitHub Explore** - Dépôts GitHub tendance extraits en temps réel pour identifier les projets open-source populaires, leurs langages de programmation, thèmes et fréquence de mise à jour.
 
-1. **Local Power Consumption Data** - Historical power consumption records for three zones with environmental metrics including temperature, humidity, wind speed, and solar diffuse flows.
+3. **Données des clients bancaires téléchargées** - Informations client téléchargées à partir de sources Internet contenant les profils clients, les scores de crédit, la géographie, l'âge, l'ancienneté, le solde et le statut de désabonnement.
 
-2. **GitHub Explore Page** - Trending GitHub repositories scraped in real-time to identify popular open-source projects, their programming languages, topics, and update frequency.
+## Comment les données sont traitées
 
-3. **Downloaded Bank Customer Data** - Customer information downloaded from internet sources containing customer profiles, credit scores, geography, age, tenure, balance, and churn status.
+Les données circulent dans le système en étapes distinctes :
 
-## How Data is Processed
+1. **Extraction** - Les données provenant de sources externes sont extraites à l'aide de scripts Python. Les données GitHub sont extraites avec BeautifulSoup. Les fichiers locaux et les données client téléchargées sont lus directement. Toutes les données brutes vont au compartiment bronze MinIO.
 
-Data flows through the system in distinct stages:
+2. **Traitement** - Les données du compartiment bronze sont traitées par le cluster Apache Spark. Spark transforme les données brutes, extrait les fonctionnalités, agrège les statistiques et effectue les calculs. Plusieurs nœuds de travail gèrent le calcul en parallèle.
 
-1. **Extraction** - Data from external sources is extracted using Python scripts. GitHub data is scraped using BeautifulSoup. Local files and downloaded customer data are read directly. All raw data goes to MinIO bronze bucket.
+3. **Résultats de l'analyse** - Les données traitées sont enregistrées dans le compartiment argent MinIO sous forme de fichiers d'analyse. Ces fichiers contiennent des statistiques finales, des classements, des tendances et des prédictions prêts pour les insights.
 
-2. **Processing** - Data from bronze bucket is processed by Apache Spark cluster. Spark transforms raw data, extracts features, aggregates statistics, and performs calculations. Multiple worker nodes handle the computation in parallel.
+4. **Orchestration** - Kestra gère l'ensemble du workflow, planifie les extractions, déclenche les travaux Spark, surveille la fin et gère les défaillances.
 
-3. **Analysis Results** - Processed data is saved to MinIO silver bucket as analysis files. These files contain final statistics, rankings, trends, and predictions ready for insights.
+## Architecture du système
 
-4. **Orchestration** - Kestra manages the entire workflow, scheduling extractions, triggering Spark jobs, monitoring completion, and handling failures.
-
-## System Architecture
-
-The complete infrastructure consists of multiple interconnected services working together to handle the entire data pipeline:
+L'infrastructure complète se compose de plusieurs services interconnectés travaillant ensemble pour gérer l'ensemble du pipeline de données :
 
 ```mermaid
 graph TB
-    subgraph "Data Sources"
-        GitHub["GitHub Explore<br/>Trending Repositories"]
-        LocalData["Local Data Files<br/>Power Consumption JSON"]
-        BankData["Downloaded Bank Data<br/>Customer Information CSV"]
+    subgraph "Sources de données"
+        GitHub["GitHub Explore<br/>Dépôts tendance"]
+        LocalData["Fichiers de données locales<br/>JSON de consommation d'énergie"]
+        BankData["Données bancaires téléchargées<br/>CSV d'informations client"]
     end
     
-    subgraph "Extraction Layer"
-        ExtractGH["Extract GitHub<br/>extract_github_projects.py<br/>BeautifulSoup Scraper"]
-        ExtractLocal["Load Local Data<br/>Read JSON Files"]
-        ExtractBank["Load Bank Data<br/>Read Downloaded CSV"]
+    subgraph "Couche d'extraction"
+        ExtractGH["Extraire GitHub<br/>extract_github_projects.py<br/>Scraper BeautifulSoup"]
+        ExtractLocal["Charger les données locales<br/>Lire les fichiers JSON"]
+        ExtractBank["Charger les données bancaires<br/>Lire le CSV téléchargé"]
     end
     
-    subgraph "MinIO Bronze Layer"
-        Bronze["Raw Extracted Data<br/>data.json<br/>projects.json<br/>customers.csv"]
+    subgraph "Couche Bronze MinIO"
+        Bronze["Données brutes extraites<br/>data.json<br/>projects.json<br/>customers.csv"]
     end
     
-    subgraph "Processing Layer"
-        Spark["Apache Spark Cluster"]
-        Master["Spark Master<br/>spark://spark:7077"]
-        Worker1["Worker Node 1<br/>2 Cores / 2GB"]
-        Worker2["Worker Node 2<br/>2 Cores / 2GB"]
+    subgraph "Couche de traitement"
+        Spark["Cluster Apache Spark"]
+        Master["Maître Spark<br/>spark://spark:7077"]
+        Worker1["Nœud de travail 1<br/>2 Cores / 2GB"]
+        Worker2["Nœud de travail 2<br/>2 Cores / 2GB"]
     end
     
-    subgraph "MinIO Silver Layer"
-        Silver["Processed Results<br/>power_analysis.json<br/>github_analysis.json<br/>customer_analysis.json"]
+    subgraph "Couche Argent MinIO"
+        Silver["Résultats traités<br/>power_analysis.json<br/>github_analysis.json<br/>customer_analysis.json"]
     end
     
     subgraph "Orchestration"
-        Kestra["Kestra Automation Server<br/>Task Scheduling<br/>Workflow Management<br/>Port: 8080"]
-        KesteraDB["Kestra PostgreSQL<br/>Workflow Metadata"]
+        Kestra["Serveur d'automatisation Kestra<br/>Planification des tâches<br/>Gestion des workflows<br/>Port: 8080"]
+        KesteraDB["PostgreSQL Kestra<br/>Métadonnées du workflow"]
     end
     
-    subgraph "Storage"
-        PostgresDB["PostgreSQL Database<br/>Power Consumption Table<br/>Indexed Queries"]
+    subgraph "Stockage"
+        PostgresDB["Base de données PostgreSQL<br/>Tableau des consommations<br/>Requêtes indexées"]
     end
 
     GitHub --> ExtractGH
@@ -138,48 +140,52 @@ graph TB
     PostgresDB -.->|Store/Query| Kestra
 ```
 
-## MinIO Storage Structure
+## Structure de stockage MinIO
 
-Data is organized in MinIO by type and date for easy tracking and retrieval.
+Les données sont organisées dans MinIO par type et date pour un suivi et une récupération faciles.
 
-### Bronze Bucket
+### Compartiment Bronze
 
-Raw extracted data from all sources stored by date. No transformations applied.
+Données brutes extraites de toutes les sources stockées par date. Aucune transformation appliquée.
 
-**Bank Customer Data**
-- Path: `file/{YYYY-MM-DD}/data.json`
-- Source: Downloaded from internet (CSV converted to JSON)
-- Updated: Daily
+**Données des clients bancaires**
 
-**Power Consumption Data**
-- Path: `db/{YYYY-MM-DD}/data.json`
-- Source: PostgreSQL database
-- Updated: Daily
+- Chemin: `file/{YYYY-MM-DD}/data.json`
+- Source: Téléchargé d'Internet (CSV converti en JSON)
+- Mis à jour: Quotidiennement
 
-**GitHub Projects Data**
-- Path: `web/{YYYY-MM-DD}/data.json`
-- Source: GitHub explore page (BeautifulSoup scraper)
-- Updated: Daily
+**Données de consommation d'énergie**
 
-### Silver Bucket
+- Chemin: `db/{YYYY-MM-DD}/data.json`
+- Source: Base de données PostgreSQL
+- Mis à jour: Quotidiennement
 
-Processed and analyzed data ready for insights, organized by type and date.
+**Données des projets GitHub**
 
-**Power Analysis**
-- Path: `db/{YYYY-MM-DD}/data.json`
-- Output from: `process_db_spark` (Spark processing)
-- Contains: 15 analyses including zone totals, hourly patterns, temperature extremes by month, peak consumption hours
+- Chemin: `web/{YYYY-MM-DD}/data.json`
+- Source: Page GitHub explore (scraper BeautifulSoup)
+- Mis à jour: Quotidiennement
 
-**Customer Analysis**
-- Path: `file/{YYYY-MM-DD}/data.json`
-- Output from: `process_file_spark` (Spark processing)
-- Contains: Churn analysis, customer segmentation by credit score, demographic breakdowns by geography
+### Compartiment Argent
 
-**GitHub Analysis**
-- Path: `web/{YYYY-MM-DD}/data.json`
-- Output from: `process_web_spark` (Spark processing)
-- Contains: Repository rankings by stars, language distributions, trending scores
+Données traitées et analysées prêtes pour les insights, organisées par type et date.
 
-Each file is organized by date (YYYY-MM-DD) to maintain historical data and enable rollback if needed. The two-layer approach allows rebuilding silver from bronze if processing logic changes, while maintaining complete data lineage and audit trail.
+**Analyse de l'énergie**
 
+- Chemin: `db/{YYYY-MM-DD}/data.json`
+- Sortie de: `process_db_spark` (traitement Spark)
+- Contient: 15 analyses incluant les totaux par zone, les modèles horaires, les extrêmes de température par mois, les heures de consommation de pointe
 
+**Analyse client**
+
+- Chemin: `file/{YYYY-MM-DD}/data.json`
+- Sortie de: `process_file_spark` (traitement Spark)
+- Contient: Analyse du désabonnement, segmentation client par score de crédit, répartition démographique par géographie
+
+**Analyse GitHub**
+
+- Chemin: `web/{YYYY-MM-DD}/data.json`
+- Sortie de: `process_web_spark` (traitement Spark)
+- Contient: Classement des dépôts par étoiles, distribution des langages, scores tendance
+
+Chaque fichier est organisé par date (YYYY-MM-DD) pour maintenir les données historiques et permettre une restauration si nécessaire. L'approche à deux niveaux permet de reconstruire l'argent à partir du bronze si la logique de traitement change, tout en maintenant la traçabilité compète des données et la piste d'audit.
