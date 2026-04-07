@@ -362,7 +362,7 @@ tasks:
             secretKeyId: "{{vars.minio_secret_key}}"
             bucket: "silver"
             from: "{{ outputs.process_web_spark.outputFiles['output.json'] }}"
-            key: "db/{{ render(vars.process_date)}}/data.json"
+            key: "web/{{ render(vars.process_date)}}/data.json"
 
   - id: notify_mailpit
     type: io.kestra.plugin.email.MailExecution
